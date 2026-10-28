@@ -52,6 +52,32 @@ app.use(
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+/* ── Health Checker / Keep-Alive Endpoint ── */
+// Supports HEAD and GET on /health, /api/health, and /ping
+// Defined before rate limiter so uptime monitors won't be blocked
+const healthHandler = (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+  });
+
+  if (req.method === 'HEAD') {
+    return res.status(200).end();
+  }
+
+  res.status(200).json({
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    service: 'SkyPulse Weather Service',
+  });
+};
+
+app.route('/health').get(healthHandler).head(healthHandler);
+app.route('/api/health').get(healthHandler).head(healthHandler);
+app.route('/ping').get(healthHandler).head(healthHandler);
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
@@ -66,10 +92,6 @@ app.use('/api/stations', stationRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/notes', noteRoutes);
 app.use('/api/notifications', notificationRoutes);
-
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'SkyPulse Weather Service' });
-});
 
 /* ── Static Frontend Serving (Single Deployment) ── */
 const distPath = path.resolve(__dirname, '../../web/dist');
