@@ -5,6 +5,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 
 import { connectDB } from './config/db.js';
 import { initCloudinary } from './config/cloudinary.js';
@@ -20,15 +23,21 @@ import notificationRoutes from './routes/notifications.js';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 /* ── Express & HTTP ── */
 const app = express();
 const httpServer = createServer(app);
 
+const clientOrigin = process.env.CLIENT_URL || true;
+
 /* ── Socket.io ── */
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: clientOrigin,
     methods: ['GET', 'POST'],
+    credentials: true,
   },
 });
 
@@ -36,7 +45,7 @@ const io = new Server(httpServer, {
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: clientOrigin,
     credentials: true,
   })
 );
@@ -61,6 +70,18 @@ app.use('/api/notifications', notificationRoutes);
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'SkyPulse Weather Service' });
 });
+
+/* ── Static Frontend Serving (Single Deployment) ── */
+const distPath = path.resolve(__dirname, '../../web/dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({ message: 'API route not found' });
+    }
+    res.sendFile(path.resolve(distPath, 'index.html'));
+  });
+}
 
 /* ── Boot ── */
 const start = async () => {
