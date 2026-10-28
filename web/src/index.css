@@ -877,20 +877,22 @@ textarea.input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 0;
+  gap: 16px;
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(6, 6, 15, 0.8);
+  background: rgba(6, 6, 15, 0.85);
   backdrop-filter: blur(20px);
-  margin: 0 -24px;
-  padding: 16px 24px;
+  margin: 0 -24px 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
 }
 
 .header-left {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .header-logo {
@@ -898,10 +900,80 @@ textarea.input {
   font-weight: 800;
 }
 
+.header-search-container {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  max-width: 440px;
+}
+
 .header-right {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+.desktop-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.station-user-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--bg-glass);
+  border-radius: var(--r-full);
+  border: 1px solid var(--border);
+}
+
+.station-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--online);
+  flex-shrink: 0;
+}
+
+.station-user-id {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.station-disconnect-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--t-fast);
+}
+.station-disconnect-btn:hover {
+  color: var(--danger);
+}
+
+.mobile-unread-dot {
+  position: absolute;
+  top: 2px;
+  right: 14px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  border-radius: var(--r-full);
+  padding: 1px 5px;
+  min-width: 14px;
+  text-align: center;
+  line-height: 1.2;
 }
 
 /* ── Quick Stats Bar ── */
@@ -1718,14 +1790,121 @@ textarea.input {
 }
 
 @media (max-width: 768px) {
-  .mobile-nav {
-    display: block;
+  /* HIDE desktop nav links at the top so only mobile bottom nav handles navigation */
+  .desktop-nav-links {
+    display: none !important;
   }
 
+  /* Responsive header layout on mobile */
+  .app-header {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 10px 16px;
+    margin: 0 -16px 12px;
+  }
+
+  .header-left {
+    flex: 1;
+  }
+
+  .landing-logo {
+    font-size: 1.15rem;
+    gap: 8px;
+  }
+
+  .landing-logo-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+
+  .header-telemetry-badge {
+    display: none !important;
+  }
+
+  .header-search-container {
+    order: 3;
+    width: 100%;
+    max-width: 100% !important;
+    margin-top: 4px;
+  }
+
+  .station-user-badge {
+    padding: 3px 8px;
+  }
+
+  .station-user-id {
+    max-width: 95px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.7rem;
+  }
+
+  .mobile-nav {
+    display: block;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(6, 6, 15, 0.96);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    padding: 6px 0 8px;
+    z-index: 1000;
+  }
+
+  .mobile-nav-items {
+    display: flex;
+    justify-content: space-around;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 8px;
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: color var(--t-fast);
+  }
+
+  .mobile-nav-item:hover,
+  .mobile-nav-item.active {
+    color: var(--accent);
+  }
+
+  .mobile-nav-icon {
+    font-size: 1.25rem;
+  }
+
+  /* Prevent bottom nav from obscuring page content */
+  .landing-content,
   .dashboard-content,
   .notes-content,
   .settings-content {
-    padding-bottom: 80px;
+    padding-bottom: 90px !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  .landing-hero {
+    padding: 24px 0 20px;
+  }
+
+  .landing-hero h1 {
+    font-size: 1.8rem;
+  }
+
+  .landing-hero p {
+    font-size: 0.95rem;
+    margin-bottom: 20px;
   }
 
   /* Chat: full-screen panels */
@@ -1733,6 +1912,7 @@ textarea.input {
     width: 100%;
     min-width: 100%;
     display: flex;
+    padding-bottom: 80px;
   }
   .station-sidebar.hidden {
     display: none;
@@ -1794,14 +1974,14 @@ textarea.input {
   }
 
   .weather-main-card {
-    padding: 20px;
+    padding: 16px;
   }
 
   .weather-temp {
-    font-size: 2.5rem;
+    font-size: 2.2rem;
   }
 
   .landing-hero h1 {
-    font-size: 1.8rem;
+    font-size: 1.6rem;
   }
 }
