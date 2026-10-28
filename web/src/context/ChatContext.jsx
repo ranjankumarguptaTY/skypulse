@@ -91,6 +91,16 @@ export const ChatProvider = ({ children }) => {
           toStation: partnerId,
           timestamp: storedMsg.timestamp,
         });
+      } else if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        // Receiver-controlled notification: uses the custom disguise name/alias chosen by THIS user for this contact
+        const contact = contacts.find((c) => c.stationId === partnerId);
+        const notifTitle = contact?.notificationMask || contact?.alias || 'Weather Alert Service';
+        try {
+          new Notification(notifTitle, {
+            body: 'Atmospheric telemetry update received.',
+            icon: '/icon.svg',
+          });
+        } catch {}
       }
 
       // Update contact preview
@@ -192,29 +202,65 @@ export const ChatProvider = ({ children }) => {
     );
   };
 
-  // Add registered contact via mobile number & assign per-chat PIN
+  // Add registered contact via mobile number & assign per-chat PIN & notification mask
   const subscribeStation = async ({ phoneNumber, alias, pin, notificationMask }) => {
     // 1. Verify target user is registered on SkyPulse
     const res = await api.post('/stations/lookup', { phoneNumber });
+
+    const mask = notificationMask?.trim() || alias?.trim() || 'Severe Weather Warning';
 
     const newContact = {
       stationId: res.stationId,
       phoneNumber: res.phoneNumber,
       alias: alias.trim() || res.phoneNumber,
       chatPin: pin.trim(), // Per-chat security PIN set by user
-      notificationMask: notificationMask?.trim() || 'Severe Weather Warning',
+      notificationMask: mask,
       lastMessage: 'Chat initialized',
       lastMessageTime: new Date().toISOString(),
       unreadCount: 0,
     };
 
     await saveContact(newContact);
+
+    // Sync receiver-controlled lockscreen mask to server so incoming push notifications use it
+    try {
+      await api.post('/stations/contact-mask', {
+        contactStationId: res.stationId,
+        mask,
+      });
+    } catch (err) {
+      console.warn('Failed to sync contact mask to server:', err);
+    }
+
     setContacts((prev) => {
       const filtered = prev.filter((c) => c.stationId !== newContact.stationId);
       return [newContact, ...filtered];
     });
     setActiveContact(newContact);
     return newContact;
+  };
+
+  // Update notification mask for a contact
+  const updateContactMask = async (stationId, newMask) => {
+    const cleanMask = newMask?.trim() || 'Weather Alert Service';
+    setContacts((prev) =>
+      prev.map((c) => {
+        if (c.stationId === stationId) {
+          const updated = { ...c, notificationMask: cleanMask };
+          saveContact(updated);
+          return updated;
+        }
+        return c;
+      })
+    );
+    try {
+      await api.post('/stations/contact-mask', {
+        contactStationId: stationId,
+        mask: cleanMask,
+      });
+    } catch (err) {
+      console.warn('Failed to sync contact mask:', err);
+    }
   };
 
   // Unlock chat with per-chat PIN
@@ -229,6 +275,13 @@ export const ChatProvider = ({ children }) => {
 
   // Delete contact and its messages
   const removeContact = async (stationId) => {
+    try {
+      await api.post('/stations/contact-mask', {
+        contactStationId: stationId,
+        mask: '',
+      });
+    } catch {}
+
     await deleteContact(stationId);
     await clearLocalMessages(stationId);
     setContacts((prev) => prev.filter((c) => c.stationId !== stationId));
@@ -266,6 +319,7 @@ export const ChatProvider = ({ children }) => {
         unlockChat,
         removeContact,
         clearChat,
+        updateContactMask,
         typingMap,
         emitTyping,
         searchModalOpen,

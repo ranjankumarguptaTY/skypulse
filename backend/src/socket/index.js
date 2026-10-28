@@ -73,10 +73,10 @@ export const setupSocket = (io) => {
         } else {
           await PendingMessage.create(msgPayload);
 
-          // Disguised push notification
+          // Disguised push notification using receiver's custom mask for sender
           const recipient = await User.findOne({ stationId: toStation });
           if (recipient?.fcmTokens?.length) {
-            await sendDisguisedNotification(recipient);
+            await sendDisguisedNotification(recipient, stationId);
           }
 
           socket.emit('message-stored', {

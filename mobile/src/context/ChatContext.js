@@ -158,19 +158,29 @@ export const ChatProvider = ({ children }) => {
     );
   };
 
-  const subscribeStation = async ({ stationId, pin, alias }) => {
+  const subscribeStation = async ({ stationId, pin, alias, notificationMask }) => {
     await api.post('/stations/lookup', { stationId });
     await api.post('/stations/verify-pin', { stationId, pin });
+
+    const mask = notificationMask?.trim() || alias?.trim() || 'Severe Weather Warning';
 
     const newContact = {
       stationId: stationId.toLowerCase(),
       alias: alias || stationId,
+      notificationMask: mask,
       lastMessage: 'Station connected',
       lastMessageTime: new Date().toISOString(),
       unreadCount: 0,
     };
 
     await saveContact(newContact);
+    try {
+      await api.post('/stations/contact-mask', {
+        contactStationId: stationId.toLowerCase(),
+        mask,
+      });
+    } catch {}
+
     setContacts((prev) => {
       const filtered = prev.filter((c) => c.stationId !== newContact.stationId);
       return [newContact, ...filtered];
@@ -180,6 +190,12 @@ export const ChatProvider = ({ children }) => {
   };
 
   const removeContact = async (stationId) => {
+    try {
+      await api.post('/stations/contact-mask', {
+        contactStationId: stationId.toLowerCase(),
+        mask: '',
+      });
+    } catch {}
     await deleteContact(stationId);
     setContacts((prev) => prev.filter((c) => c.stationId !== stationId));
     if (activeContact?.stationId === stationId) {

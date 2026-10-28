@@ -38,7 +38,7 @@ To anyone looking at your screen, browsing history, or lockscreen notifications,
 | **Session Lifetime** | Persistent 180-day token authentication (maintained for months) |
 | **Adding a Contact** | Add by **Registered Mobile Number**; verifies contact is already registered |
 | **Per-Chat Security PIN** | You set a private PIN per chat; only you can open this chat |
-| **Notification Disguise Name** | Sender customizes the fake notification title (e.g. `Severe Weather Warning`) |
+| **Notification Disguise Name** | Receiver configures what unique fake name/title appears on their lockscreen when that contact messages them |
 | **Instant Unlocking** | Once added, simply search the user, enter your PIN, and chat opens |
 | **Chat Screen** | `Station Telemetry Monitor` with dual mode: **Chat Bubbles** or **Raw Observation Logs** (`[LOG 14:32:01] LOCAL_TX: ...`) |
 | **Search Omnibar** | Genuinely searches global weather forecasts & news articles; typing `help` opens the secret user manual; typing a mobile number unlocks or adds chat |
@@ -54,7 +54,7 @@ To anyone looking at your screen, browsing history, or lockscreen notifications,
 - **Months-Long Persistent Session**: Long-lived 180-day JWT tokens stored locally ensure you don't have to keep logging in.
 - **Registered User Verification**: Only users who have already registered with their mobile number can be added or chatted with.
 - **Per-Chat Security PIN**: When you add a contact, **you set a private PIN for that specific chat**. Nobody else using your device can open or read that chat without entering your PIN.
-- **Custom Notification Masking**: The sender can configure what fake name/title appears on lockscreen notifications for each contact.
+- **Receiver-Controlled Notification Masking**: As the receiver, you configure what unique disguise name/title appears on your lockscreen notifications for each contact (e.g. your custom alias or fake weather alert). The sender has no control over what appears on your device.
 - **Zero-Friction Re-Entry**: Once a contact is added, you never need to add them again. Just search their mobile number or alias, enter your PIN, and the chat screen opens immediately.
 - **Local-First Zero-Knowledge Storage**: Chat messages are stored **exclusively on the user's device** using `IndexedDB` (Web) and `AsyncStorage` (Mobile). The server **never** stores permanent chat logs.
 - **5-Day Expiring File Sharing**: Files uploaded through Cloudinary are tracked. Once downloaded by the recipient, a 5-day countdown begins, after which an automated cron scheduler purges the file from Cloudinary and the database.

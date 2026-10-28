@@ -46,6 +46,33 @@ router.post('/lookup', protect, async (req, res) => {
   }
 });
 
+/* ─── Save / Update Contact Notification Mask (Receiver Controlled) ─── */
+router.post('/contact-mask', protect, async (req, res) => {
+  try {
+    const { contactStationId, mask } = req.body;
+    if (!contactStationId) {
+      return res.status(400).json({ message: 'contactStationId required' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user.contactMasks) {
+      user.contactMasks = new Map();
+    }
+
+    if (mask && mask.trim()) {
+      user.contactMasks.set(contactStationId.toLowerCase(), mask.trim());
+    } else {
+      user.contactMasks.delete(contactStationId.toLowerCase());
+    }
+
+    await user.save();
+    res.json({ success: true, contactStationId, mask: mask?.trim() || null });
+  } catch (error) {
+    console.error('Contact mask update error:', error);
+    res.status(500).json({ message: 'Failed to update contact mask' });
+  }
+});
+
 /* ─── Check online status ─── */
 router.get('/status/:stationId', protect, async (req, res) => {
   try {

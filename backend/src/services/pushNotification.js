@@ -50,17 +50,32 @@ const getDisguisedContent = (template) => {
 };
 
 /**
- * Send a disguised push notification to a user.
- * The notification title/body never mentions chat, messages, or contacts.
+ * Send a disguised push notification to a recipient.
+ * Uses the custom notification mask / alias configured by the RECEIVER for this contact,
+ * or falls back to the receiver's global notification display name or default title.
+ * The sender never controls what appears on the receiver's device.
  */
-export const sendDisguisedNotification = async (user) => {
+export const sendDisguisedNotification = async (user, fromStationId = null) => {
   if (!admin.apps.length || !user.fcmTokens?.length) return;
 
   const template = user.notificationConfig?.messageTemplate || 'weather';
   const content = getDisguisedContent(template);
 
-  // Override title with user's custom display name if set
-  const title = user.notificationConfig?.displayName || content.title;
+  // Check if the receiver configured a unique mask/title for this specific sender
+  let title = content.title;
+  if (fromStationId && user.contactMasks) {
+    const receiverCustomMask = user.contactMasks.get
+      ? user.contactMasks.get(fromStationId.toLowerCase())
+      : user.contactMasks[fromStationId.toLowerCase()];
+    if (receiverCustomMask) {
+      title = receiverCustomMask;
+    }
+  }
+
+  // If no contact-specific mask was set by the receiver, use their global display name
+  if (title === content.title && user.notificationConfig?.displayName) {
+    title = user.notificationConfig.displayName;
+  }
 
   const invalidTokens = [];
 

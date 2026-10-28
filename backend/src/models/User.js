@@ -22,6 +22,11 @@ const userSchema = new mongoose.Schema(
       minlength: 6,
     },
     fcmTokens: [{ type: String }],
+    contactMasks: {
+      type: Map,
+      of: String,
+      default: {},
+    },
     notificationConfig: {
       displayName: { type: String, default: 'Weather Alert Service' },
       messageTemplate: {
