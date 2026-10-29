@@ -8,7 +8,7 @@ import { getWeatherData } from '../services/weatherNews';
 
 export const DashboardPage = () => {
   const { user } = useAuth();
-  const { contacts, setSearchModalOpen, setActiveContact } = useChat();
+  const { setSearchModalOpen, setActiveContact } = useChat();
   const navigate = useNavigate();
 
   const [weather, setWeather] = useState(null);
@@ -85,8 +85,8 @@ export const DashboardPage = () => {
               🛰️
             </div>
             <div className="stat-info">
-              <h4>{contacts.length} Connected Relays</h4>
-              <p>Local Peer Contacts</p>
+              <h4>Zero-Trace Active</h4>
+              <p>Manual Access Only</p>
             </div>
           </div>
 
@@ -175,64 +175,70 @@ export const DashboardPage = () => {
             )}
           </div>
 
-          {/* Connected Stations (Secret Chat Contacts) */}
+          {/* Encrypted Telemetry Gateway Status (Zero-Trace: Zero contacts on screen) */}
           <div className="card">
             <div className="flex-between mb-16">
               <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>
-                Synchronized Relays
+                Atmospheric Telemetry Link
               </h3>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => setSearchModalOpen(true)}
-              >
-                + Link Relay
-              </button>
+              <span className="badge badge-accent">Standby</span>
             </div>
 
-            {contacts.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div
                 style={{
-                  textAlign: 'center',
-                  padding: '32px 16px',
-                  color: 'var(--text-muted)',
+                  background: 'var(--bg-glass)',
+                  padding: '12px 16px',
+                  borderRadius: 'var(--r-md)',
+                  border: '1px solid var(--border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                 }}
               >
-                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📡</div>
-                <p className="text-sm">No remote peer stations linked yet.</p>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Zero-Trace Security Matrix</div>
+                  <div className="text-xs text-muted">No peer station rosters are cached on screen</div>
+                </div>
+                <span className="station-status-dot" />
+              </div>
+
+              <div
+                style={{
+                  background: 'var(--bg-glass)',
+                  padding: '12px 16px',
+                  borderRadius: 'var(--r-md)',
+                  border: '1px solid var(--border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Cipher &amp; Protocol Gate</div>
+                  <div className="text-xs text-muted">Per-Chat PIN verification required for channel access</div>
+                </div>
+                <span style={{ fontSize: '0.85rem' }}>🔐</span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm mt-8"
+                  className="btn btn-primary btn-sm"
+                  style={{ flex: 1 }}
+                  onClick={() => navigate('/feed')}
+                >
+                  📡 Open Terminal Gateway
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
                   onClick={() => setSearchModalOpen(true)}
                 >
-                  Pair First Station (Secret Search)
+                  🔍 Connect Relay
                 </button>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {contacts.map((c) => (
-                  <div
-                    key={c.stationId}
-                    className="station-item"
-                    onClick={() => openContactChat(c)}
-                    style={{ background: 'var(--bg-glass)' }}
-                  >
-                    <div className="station-avatar">
-                      {c.alias?.[0]?.toUpperCase() || c.stationId?.[0]?.toUpperCase() || 'S'}
-                    </div>
-                    <div className="station-info">
-                      <div className="station-name">{c.alias || c.stationId}</div>
-                      <div className="station-last-msg">
-                        {c.lastMessage || 'Ready for telemetry stream'}
-                      </div>
-                    </div>
-                    {c.unreadCount > 0 && (
-                      <span className="station-unread">{c.unreadCount}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            </div>
           </div>
         </div>
 

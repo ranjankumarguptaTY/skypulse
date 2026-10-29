@@ -5,18 +5,40 @@ const URL = import.meta.env.VITE_SOCKET_URL || '';
 let socket = null;
 
 export const connectSocket = (token) => {
-  if (socket?.connected) return socket;
+  if (socket) {
+    if (token && socket.auth?.token !== token) {
+      socket.auth = { token };
+      if (socket.connected) {
+        socket.disconnect().connect();
+      } else {
+        socket.connect();
+      }
+    } else if (!socket.connected) {
+      socket.connect();
+    }
+    return socket;
+  }
 
   socket = io(URL, {
     auth: { token },
     transports: ['websocket', 'polling'],
-    reconnectionAttempts: 10,
-    reconnectionDelay: 2000,
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
   });
 
-  socket.on('connect', () => console.log('🟢 SkyPulse network connected'));
-  socket.on('disconnect', () => console.log('🔴 SkyPulse network disconnected'));
-  socket.on('connect_error', (err) => console.error('Connection error:', err.message));
+  socket.on('connect', () => {
+    console.log('🟢 SkyPulse telemetry link established:', socket.id);
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log('🔴 SkyPulse telemetry link suspended:', reason);
+  });
+
+  socket.on('connect_error', (err) => {
+    console.warn('Telemetry link connection retry:', err.message);
+  });
 
   return socket;
 };

@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './AuthContext';
-import { getSocket } from '../services/socket';
+import { getSocket, connectSocket } from '../services/socket';
 import {
   getContacts,
   saveContact,
@@ -20,9 +20,30 @@ export const ChatProvider = ({ children }) => {
   const [messages, setMessages] = useState([]);
   const [typingMap, setTypingMap] = useState({});
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const [unlockModalTarget, setUnlockModalTarget] = useState(null); // Contact currently prompting for PIN
+  const [unlockModalTarget, setUnlockModalTarget] = useState(null);
+  const [unlockedContacts, setUnlockedContacts] = useState({});
 
-  // Load contacts from IndexedDB
+  // Persistent in-app notifications
+  const [notifications, setNotifications] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sp_notifications');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const activeContactRef = useRef(activeContact);
+  useEffect(() => {
+    activeContactRef.current = activeContact;
+  }, [activeContact]);
+
+  const contactsRef = useRef(contacts);
+  useEffect(() => {
+    contactsRef.current = contacts;
+  }, [contacts]);
+
+  // Load contacts from IndexedDB (stealth store for PIN and alias verification)
   const reloadContacts = useCallback(async () => {
     try {
       const list = await getContacts();
@@ -39,6 +60,7 @@ export const ChatProvider = ({ children }) => {
       setContacts([]);
       setActiveContact(null);
       setMessages([]);
+      setUnlockedContacts({});
     }
   }, [isAuthenticated, reloadContacts]);
 
@@ -51,7 +73,12 @@ export const ChatProvider = ({ children }) => {
         return;
       }
       try {
-        const msgs = await getMessages(activeContact.stationId);
+        const cleanId = activeContact.stationId?.trim()?.toLowerCase();
+        let msgs = await getMessages(cleanId);
+        if ((!msgs || msgs.length === 0) && activeContact.stationId !== cleanId) {
+          const fallbackMsgs = await getMessages(activeContact.stationId);
+          if (fallbackMsgs?.length) msgs = fallbackMsgs;
+        }
         if (isMounted) setMessages(msgs || []);
       } catch (err) {
         console.error('Failed to get messages:', err);
@@ -64,17 +91,23 @@ export const ChatProvider = ({ children }) => {
     };
   }, [activeContact]);
 
-  // Handle incoming messages & socket events
+  // Stable socket message listener — uses activeContactRef so it never misses messages
   useEffect(() => {
-    const socket = getSocket();
-    if (!socket || !isAuthenticated) return;
+    if (!isAuthenticated) return;
+
+    const token = localStorage.getItem('sp_token');
+    const socket = connectSocket(token);
+    if (!socket) return;
 
     const handleNewMessage = async (msg) => {
-      const partnerId = msg.fromStation;
+      const partnerId = msg.fromStation?.trim()?.toLowerCase();
+      const myStationId = user?.stationId?.trim()?.toLowerCase();
+      if (!partnerId) return;
+
       const storedMsg = {
         chatId: partnerId,
         fromStation: partnerId,
-        toStation: user.stationId,
+        toStation: myStationId,
         encryptedPayload: msg.encryptedPayload,
         type: msg.type || 'text',
         fileMetadata: msg.fileMetadata || null,
@@ -84,40 +117,73 @@ export const ChatProvider = ({ children }) => {
 
       await saveMessage(storedMsg);
 
-      // If viewing active chat, append immediately
-      if (activeContact?.stationId === partnerId) {
+      const currentActive = activeContactRef.current;
+      const isCurrentChat =
+        currentActive?.stationId?.trim()?.toLowerCase() === partnerId;
+
+      // If receiver currently has this specific chat open, append immediately in real time
+      if (isCurrentChat) {
         setMessages((prev) => [...prev, storedMsg]);
         socket.emit('message-read', {
           toStation: partnerId,
           timestamp: storedMsg.timestamp,
         });
-      } else if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        // Receiver-controlled notification: uses the custom disguise name/alias chosen by THIS user for this contact
-        const contact = contacts.find((c) => c.stationId === partnerId);
-        const notifTitle = contact?.notificationMask || contact?.alias || 'Weather Alert Service';
-        try {
-          new Notification(notifTitle, {
-            body: 'Atmospheric telemetry update received.',
-            icon: '/icon.svg',
-          });
-        } catch {}
       }
 
-      // Update contact preview
+      // Identify receiver's custom disguise title for this contact
+      const contact = contactsRef.current?.find(
+        (c) => c.stationId?.trim()?.toLowerCase() === partnerId
+      );
+      const notifTitle = contact?.notificationMask || contact?.alias || 'Weather Alert Service';
+
+      // Desktop browser notification if not actively in this chat
+      if (!isCurrentChat || (typeof document !== 'undefined' && document.hidden)) {
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          try {
+            new Notification(notifTitle, {
+              body: 'Atmospheric telemetry update received.',
+              icon: '/icon.svg',
+            });
+          } catch {}
+        }
+      }
+
+      // Record in-app notification for the notification bell dropdown
+      const notifItem = {
+        id: `${partnerId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        stationId: partnerId,
+        title: notifTitle,
+        body: 'Atmospheric telemetry broadcast received',
+        timestamp: storedMsg.timestamp,
+        read: isCurrentChat,
+      };
+
+      setNotifications((prev) => {
+        const updated = [notifItem, ...prev.filter((n) => n.id !== notifItem.id).slice(0, 49)];
+        try {
+          localStorage.setItem('sp_notifications', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+
+      // Update contact record in local IndexedDB
       setContacts((prev) => {
-        const existing = prev.find((c) => c.stationId === partnerId);
+        const existing = prev.find(
+          (c) => c.stationId?.trim()?.toLowerCase() === partnerId
+        );
         if (existing) {
           const updated = {
             ...existing,
             lastMessage: msg.type === 'file' ? '📎 Attachment' : msg.encryptedPayload,
             lastMessageTime: storedMsg.timestamp,
-            unreadCount:
-              activeContact?.stationId === partnerId ? 0 : (existing.unreadCount || 0) + 1,
+            unreadCount: isCurrentChat ? 0 : (existing.unreadCount || 0) + 1,
           };
           saveContact(updated);
-          return prev.map((c) => (c.stationId === partnerId ? updated : c));
+          return prev.map((c) =>
+            c.stationId?.trim()?.toLowerCase() === partnerId ? updated : c
+          );
         } else {
-          // Auto-discover contact by stationId
+          // Auto-save discovered contact in stealth local storage
           const newContact = {
             stationId: partnerId,
             phoneNumber: '',
@@ -135,17 +201,23 @@ export const ChatProvider = ({ children }) => {
     };
 
     const handlePendingMessages = async (pendingList) => {
-      for (const msg of pendingList) {
-        await handleNewMessage(msg);
+      if (Array.isArray(pendingList)) {
+        for (const msg of pendingList) {
+          await handleNewMessage(msg);
+        }
       }
     };
 
     const handleTyping = ({ fromStation }) => {
-      setTypingMap((prev) => ({ ...prev, [fromStation]: true }));
+      if (fromStation) {
+        setTypingMap((prev) => ({ ...prev, [fromStation.toLowerCase()]: true }));
+      }
     };
 
     const handleStopTyping = ({ fromStation }) => {
-      setTypingMap((prev) => ({ ...prev, [fromStation]: false }));
+      if (fromStation) {
+        setTypingMap((prev) => ({ ...prev, [fromStation.toLowerCase()]: false }));
+      }
     };
 
     socket.on('new-message', handleNewMessage);
@@ -159,23 +231,26 @@ export const ChatProvider = ({ children }) => {
       socket.off('user-typing', handleTyping);
       socket.off('user-stop-typing', handleStopTyping);
     };
-  }, [isAuthenticated, user?.stationId, activeContact]);
+  }, [isAuthenticated, user?.stationId]);
 
   // Send message
   const sendMessage = async (text, fileMetadata = null, type = 'text') => {
     if (!activeContact) return;
 
+    const targetStation = activeContact.stationId.trim().toLowerCase();
+    const myStation = user.stationId.trim().toLowerCase();
+
     const payload = {
-      toStation: activeContact.stationId,
+      toStation: targetStation,
       encryptedPayload: text || '',
       type,
       fileMetadata,
     };
 
     const localMsg = {
-      chatId: activeContact.stationId,
-      fromStation: user.stationId,
-      toStation: activeContact.stationId,
+      chatId: targetStation,
+      fromStation: myStation,
+      toStation: targetStation,
       encryptedPayload: text,
       type,
       fileMetadata,
@@ -186,8 +261,12 @@ export const ChatProvider = ({ children }) => {
     await saveMessage(localMsg);
     setMessages((prev) => [...prev, localMsg]);
 
-    const socket = getSocket();
-    if (socket?.connected) {
+    let socket = getSocket();
+    if (!socket) {
+      const token = localStorage.getItem('sp_token');
+      socket = connectSocket(token);
+    }
+    if (socket) {
       socket.emit('send-message', payload);
     }
 
@@ -198,22 +277,24 @@ export const ChatProvider = ({ children }) => {
     };
     await saveContact(updatedContact);
     setContacts((prev) =>
-      prev.map((c) => (c.stationId === activeContact.stationId ? updatedContact : c))
+      prev.map((c) =>
+        c.stationId.toLowerCase() === targetStation ? updatedContact : c
+      )
     );
   };
 
   // Add registered contact via mobile number & assign per-chat PIN & notification mask
   const subscribeStation = async ({ phoneNumber, alias, pin, notificationMask }) => {
-    // 1. Verify target user is registered on SkyPulse
     const res = await api.post('/stations/lookup', { phoneNumber });
 
     const mask = notificationMask?.trim() || alias?.trim() || 'Severe Weather Warning';
+    const targetStation = res.stationId.trim().toLowerCase();
 
     const newContact = {
-      stationId: res.stationId,
+      stationId: targetStation,
       phoneNumber: res.phoneNumber,
       alias: alias.trim() || res.phoneNumber,
-      chatPin: pin.trim(), // Per-chat security PIN set by user
+      chatPin: pin.trim(),
       notificationMask: mask,
       lastMessage: 'Chat initialized',
       lastMessageTime: new Date().toISOString(),
@@ -222,10 +303,9 @@ export const ChatProvider = ({ children }) => {
 
     await saveContact(newContact);
 
-    // Sync receiver-controlled lockscreen mask to server so incoming push notifications use it
     try {
       await api.post('/stations/contact-mask', {
-        contactStationId: res.stationId,
+        contactStationId: targetStation,
         mask,
       });
     } catch (err) {
@@ -233,19 +313,24 @@ export const ChatProvider = ({ children }) => {
     }
 
     setContacts((prev) => {
-      const filtered = prev.filter((c) => c.stationId !== newContact.stationId);
+      const filtered = prev.filter(
+        (c) => c.stationId.toLowerCase() !== targetStation
+      );
       return [newContact, ...filtered];
     });
+
+    setUnlockedContacts((prev) => ({ ...prev, [targetStation]: true }));
     setActiveContact(newContact);
     return newContact;
   };
 
   // Update notification mask for a contact
   const updateContactMask = async (stationId, newMask) => {
+    const cleanStation = stationId.trim().toLowerCase();
     const cleanMask = newMask?.trim() || 'Weather Alert Service';
     setContacts((prev) =>
       prev.map((c) => {
-        if (c.stationId === stationId) {
+        if (c.stationId.toLowerCase() === cleanStation) {
           const updated = { ...c, notificationMask: cleanMask };
           saveContact(updated);
           return updated;
@@ -255,7 +340,7 @@ export const ChatProvider = ({ children }) => {
     );
     try {
       await api.post('/stations/contact-mask', {
-        contactStationId: stationId,
+        contactStationId: cleanStation,
         mask: cleanMask,
       });
     } catch (err) {
@@ -265,7 +350,9 @@ export const ChatProvider = ({ children }) => {
 
   // Unlock chat with per-chat PIN
   const unlockChat = (contact, enteredPin) => {
+    const targetStation = contact.stationId.trim().toLowerCase();
     if (!contact.chatPin || contact.chatPin === enteredPin.trim()) {
+      setUnlockedContacts((prev) => ({ ...prev, [targetStation]: true }));
       setActiveContact(contact);
       setUnlockModalTarget(null);
       return true;
@@ -273,19 +360,36 @@ export const ChatProvider = ({ children }) => {
     return false;
   };
 
+  // Close and lock the active chat session
+  const closeActiveChat = () => {
+    if (activeContact) {
+      const targetStation = activeContact.stationId.trim().toLowerCase();
+      setUnlockedContacts((prev) => {
+        const next = { ...prev };
+        delete next[targetStation];
+        return next;
+      });
+    }
+    setActiveContact(null);
+    setMessages([]);
+  };
+
   // Delete contact and its messages
   const removeContact = async (stationId) => {
+    const cleanStation = stationId.trim().toLowerCase();
     try {
       await api.post('/stations/contact-mask', {
-        contactStationId: stationId,
+        contactStationId: cleanStation,
         mask: '',
       });
     } catch {}
 
-    await deleteContact(stationId);
-    await clearLocalMessages(stationId);
-    setContacts((prev) => prev.filter((c) => c.stationId !== stationId));
-    if (activeContact?.stationId === stationId) {
+    await deleteContact(cleanStation);
+    await clearLocalMessages(cleanStation);
+    setContacts((prev) =>
+      prev.filter((c) => c.stationId.toLowerCase() !== cleanStation)
+    );
+    if (activeContact?.stationId.toLowerCase() === cleanStation) {
       setActiveContact(null);
       setMessages([]);
     }
@@ -293,8 +397,9 @@ export const ChatProvider = ({ children }) => {
 
   // Clear messages only
   const clearChat = async (stationId) => {
-    await clearLocalMessages(stationId);
-    if (activeContact?.stationId === stationId) {
+    const cleanStation = stationId.trim().toLowerCase();
+    await clearLocalMessages(cleanStation);
+    if (activeContact?.stationId.toLowerCase() === cleanStation) {
       setMessages([]);
     }
   };
@@ -303,9 +408,29 @@ export const ChatProvider = ({ children }) => {
     const socket = getSocket();
     if (!socket || !activeContact) return;
     socket.emit(isTyping ? 'typing' : 'stop-typing', {
-      toStation: activeContact.stationId,
+      toStation: activeContact.stationId.trim().toLowerCase(),
     });
   };
+
+  // Notification management
+  const markNotificationAsRead = (id) => {
+    setNotifications((prev) => {
+      const updated = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+      try {
+        localStorage.setItem('sp_notifications', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const clearAllNotifications = () => {
+    setNotifications([]);
+    try {
+      localStorage.removeItem('sp_notifications');
+    } catch {}
+  };
+
+  const unreadNotificationCount = notifications.filter((n) => !n.read).length;
 
   return (
     <ChatContext.Provider
@@ -313,10 +438,12 @@ export const ChatProvider = ({ children }) => {
         contacts,
         activeContact,
         setActiveContact,
+        closeActiveChat,
         messages,
         sendMessage,
         subscribeStation,
         unlockChat,
+        unlockedContacts,
         removeContact,
         clearChat,
         updateContactMask,
@@ -327,6 +454,10 @@ export const ChatProvider = ({ children }) => {
         unlockModalTarget,
         setUnlockModalTarget,
         reloadContacts,
+        notifications,
+        unreadNotificationCount,
+        markNotificationAsRead,
+        clearAllNotifications,
       }}
     >
       {children}

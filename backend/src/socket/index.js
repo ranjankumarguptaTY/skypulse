@@ -3,14 +3,11 @@ import User from '../models/User.js';
 import PendingMessage from '../models/PendingMessage.js';
 import { sendDisguisedNotification } from '../services/pushNotification.js';
 
-/** stationId → socket */
-const onlineUsers = new Map();
-
 export const setupSocket = (io) => {
   /* ── JWT auth middleware ── */
   io.use(async (socket, next) => {
     try {
-      const token = socket.handshake.auth.token;
+      const token = socket.handshake.auth?.token;
       if (!token) return next(new Error('Authentication required'));
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -25,16 +22,20 @@ export const setupSocket = (io) => {
   });
 
   io.on('connection', async (socket) => {
-    const stationId = socket.user.stationId;
-    console.log(`Station online: ${stationId}`);
+    const rawStationId = socket.user.stationId;
+    const stationId = rawStationId.trim().toLowerCase();
+    const userRoom = `station:${stationId}`;
 
-    onlineUsers.set(stationId, socket);
+    // Join personal station room (supports multiple tabs/devices)
+    socket.join(userRoom);
+    console.log(`Station online: ${stationId} (socket: ${socket.id})`);
+
     await User.findByIdAndUpdate(socket.user._id, { isOnline: true });
 
     /* ── Flush pending messages ── */
     try {
       const pending = await PendingMessage.find({
-        toStation: stationId,
+        toStation: { $regex: new RegExp(`^${stationId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
         delivered: false,
       }).sort({ createdAt: 1 });
 
@@ -53,34 +54,43 @@ export const setupSocket = (io) => {
     socket.on('send-message', async (data) => {
       try {
         const { toStation, encryptedPayload, type, fileMetadata } = data;
+        if (!toStation) return;
+
+        const targetStation = toStation.trim().toLowerCase();
+        const targetRoom = `station:${targetStation}`;
+
         const msgPayload = {
           fromStation: stationId,
-          toStation,
-          encryptedPayload,
+          toStation: targetStation,
+          encryptedPayload: encryptedPayload || '',
           type: type || 'text',
           fileMetadata: fileMetadata || null,
           timestamp: new Date().toISOString(),
         };
 
-        const recipientSocket = onlineUsers.get(toStation);
+        // Check if recipient has any active sockets in their station room
+        const roomSockets = io.sockets.adapter.rooms.get(targetRoom);
+        const isRecipientOnline = roomSockets && roomSockets.size > 0;
 
-        if (recipientSocket) {
-          recipientSocket.emit('new-message', msgPayload);
+        if (isRecipientOnline) {
+          // Direct real-time delivery to all active recipient sockets
+          io.to(targetRoom).emit('new-message', msgPayload);
           socket.emit('message-delivered', {
-            toStation,
+            toStation: targetStation,
             timestamp: msgPayload.timestamp,
           });
         } else {
+          // Recipient currently offline: store in pending messages for next connect
           await PendingMessage.create(msgPayload);
 
-          // Disguised push notification using receiver's custom mask for sender
-          const recipient = await User.findOne({ stationId: toStation });
+          // Disguised push notification using receiver's custom mask
+          const recipient = await User.findOne({ stationId: targetStation });
           if (recipient?.fcmTokens?.length) {
             await sendDisguisedNotification(recipient, stationId);
           }
 
           socket.emit('message-stored', {
-            toStation,
+            toStation: targetStation,
             timestamp: msgPayload.timestamp,
           });
         }
@@ -92,27 +102,41 @@ export const setupSocket = (io) => {
 
     /* ── Typing indicators ── */
     socket.on('typing', ({ toStation }) => {
-      onlineUsers.get(toStation)?.emit('user-typing', { fromStation: stationId });
+      if (toStation) {
+        io.to(`station:${toStation.trim().toLowerCase()}`).emit('user-typing', {
+          fromStation: stationId,
+        });
+      }
     });
+
     socket.on('stop-typing', ({ toStation }) => {
-      onlineUsers.get(toStation)?.emit('user-stop-typing', { fromStation: stationId });
+      if (toStation) {
+        io.to(`station:${toStation.trim().toLowerCase()}`).emit('user-stop-typing', {
+          fromStation: stationId,
+        });
+      }
     });
 
     /* ── Read receipts ── */
     socket.on('message-read', ({ toStation, timestamp }) => {
-      onlineUsers
-        .get(toStation)
-        ?.emit('message-read-receipt', { fromStation: stationId, timestamp });
+      if (toStation) {
+        io.to(`station:${toStation.trim().toLowerCase()}`).emit('message-read-receipt', {
+          fromStation: stationId,
+          timestamp,
+        });
+      }
     });
 
     /* ── Disconnect ── */
     socket.on('disconnect', async () => {
-      console.log(`Station offline: ${stationId}`);
-      onlineUsers.delete(stationId);
-      await User.findByIdAndUpdate(socket.user._id, {
-        isOnline: false,
-        lastSeen: new Date(),
-      });
+      console.log(`Station socket disconnected: ${stationId} (${socket.id})`);
+      const remainingSockets = io.sockets.adapter.rooms.get(userRoom);
+      if (!remainingSockets || remainingSockets.size === 0) {
+        await User.findByIdAndUpdate(socket.user._id, {
+          isOnline: false,
+          lastSeen: new Date(),
+        });
+      }
     });
   });
 };

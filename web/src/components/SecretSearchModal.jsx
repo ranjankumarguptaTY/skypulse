@@ -5,7 +5,15 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
 export const SecretSearchModal = () => {
-  const { searchModalOpen, setSearchModalOpen, subscribeStation } = useChat();
+  const {
+    searchModalOpen,
+    setSearchModalOpen,
+    subscribeStation,
+    contacts,
+    setActiveContact,
+    setUnlockModalTarget,
+    unlockedContacts,
+  } = useChat();
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -38,6 +46,26 @@ export const SecretSearchModal = () => {
 
     if (cleanPhone === user?.phoneNumber) {
       setError('Cannot add your own mobile number.');
+      return;
+    }
+
+    // Check if contact already exists in local stealth storage
+    const existing = contacts.find(
+      (c) =>
+        (c.phoneNumber && c.phoneNumber.replace(/[\s-]/g, '') === cleanPhone) ||
+        (c.stationId && c.stationId.toLowerCase() === cleanPhone.toLowerCase()) ||
+        (c.alias && c.alias.toLowerCase() === cleanPhone.toLowerCase())
+    );
+
+    if (existing) {
+      handleClose();
+      if (!existing.chatPin || unlockedContacts[existing.stationId.toLowerCase()]) {
+        setActiveContact(existing);
+        navigate('/feed');
+      } else {
+        setUnlockModalTarget(existing);
+        navigate('/feed');
+      }
       return;
     }
 

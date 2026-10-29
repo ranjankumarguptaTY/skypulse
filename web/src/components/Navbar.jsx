@@ -4,15 +4,14 @@ import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { SearchBar } from './SearchBar';
 import { HelpManualModal } from './HelpManualModal';
+import { NotificationDropdown } from './NotificationDropdown';
 
 export const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
-  const { contacts, activeContact } = useChat();
+  const { activeContact, unreadNotificationCount } = useChat();
   const [helpOpen, setHelpOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-
-  const totalUnread = contacts.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
   // Hide mobile bottom nav during an active 1-on-1 chat in /feed so chat input has full bottom screen space
   const showMobileNav = isAuthenticated && (!activeContact || location.pathname !== '/feed');
@@ -47,12 +46,12 @@ export const Navbar = () => {
           </button>
         </div>
 
-        {/* Center: Real Omnibar Search (full width row on mobile) */}
+        {/* Center: Real Omnibar Search */}
         <div className="header-search-container">
           <SearchBar onHelpOpen={() => setHelpOpen(true)} />
         </div>
 
-        {/* Right: Navigation Controls */}
+        {/* Right: Navigation Controls & Disguised Notifications */}
         <nav className="header-right">
           {isAuthenticated ? (
             <>
@@ -79,16 +78,9 @@ export const Navbar = () => {
                   className={`btn btn-ghost btn-sm ${
                     location.pathname === '/feed' ? 'active' : ''
                   }`}
-                  style={{ position: 'relative' }}
                 >
-                  📡 Station Feed
-                  {totalUnread > 0 && (
-                    <span className="station-unread">
-                      {totalUnread}
-                    </span>
-                  )}
+                  📡 Terminal
                 </Link>
-
                 <Link
                   to="/settings"
                   className="btn-icon"
@@ -97,6 +89,9 @@ export const Navbar = () => {
                   ⚙️
                 </Link>
               </div>
+
+              {/* In-App Notification Bell & Popup Dropdown */}
+              <NotificationDropdown />
 
               {/* Station Badge & Disconnect */}
               <div className="station-user-badge">
@@ -163,10 +158,10 @@ export const Navbar = () => {
                 style={{ position: 'relative' }}
               >
                 <span className="mobile-nav-icon">📡</span>
-                <span>Feed</span>
-                {totalUnread > 0 && (
+                <span>Terminal</span>
+                {unreadNotificationCount > 0 && (
                   <span className="mobile-unread-dot">
-                    {totalUnread}
+                    {unreadNotificationCount}
                   </span>
                 )}
               </Link>
